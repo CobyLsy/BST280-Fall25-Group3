@@ -1,5 +1,5 @@
 ---
-title: "main"
+title: "Group 3 Final Report"
 output: html_document
 ---
 
@@ -82,16 +82,16 @@ mat <- assay(vsd)
 
 ## Perform PCA for all genes (Take long time, so commented out)
 ```{r}
- pca_res <- prcomp(t(mat), scale. = TRUE)
- pca_df <- as.data.frame(pca_res$x[, 1:2])
+pca_res <- prcomp(t(mat), scale. = TRUE)
+pca_df <- as.data.frame(pca_res$x[, 1:2])
 pca_df$Type <- coldata$Type
-# 
+
 ggplot(pca_df, aes(PC1, PC2, color = Type)) +
-geom_point(size = 1.5, alpha = 0.8) +
-theme_minimal(base_size = 16) +
-labs(title = "PCA of TCGA LUAD vs LUSC (Filtered, Normalized)",
-  x = paste0("PC1"),
-  y = paste0("PC2"))
+  geom_point(size = 1.5, alpha = 0.8) +
+  theme_minimal(base_size = 16) +
+  labs(title = "PCA of LUAD vs LUSC",
+       x = paste0("PC1"),
+       y = paste0("PC2"))
 ```
 
 Using Kmeans to identify clusters
@@ -103,10 +103,28 @@ Visualize the Kmeans clusters.
 ```{r}
 pca_df$KmeansCluster <- factor(km_res$cluster)
 ggplot(pca_df, aes(PC1, PC2, color = KmeansCluster)) +
-   geom_point(size = 1.5, alpha = 0.8) +
-   theme_minimal(base_size = 16) +
-   labs(title = "K-means Clustering (k = 2) on PCA",
-        color = "Cluster")
+  geom_point(size = 1.5, alpha = 0.8) +
+  theme_minimal(base_size = 16) +
+  labs(title = "K-means Clustering on PCA",
+       color = "Cluster")
+```
+# Check how well the clusters identify the cell types
+```{r}
+tab <- table(TrueType = pca_df$Type,
+             Cluster = pca_df$KmeansCluster)
+tab
+```
+
+# Quantify the accuracy
+```{r}
+# accuracy if Cluster 1 = LUAD, Cluster 2 = LUSC
+acc1 <- (tab["LUAD","1"] + tab["LUSC","2"]) / sum(tab)
+
+# accuracy if Cluster 1 = LUSC, Cluster 2 = LUAD
+acc2 <- (tab["LUSC","1"] + tab["LUAD","2"]) / sum(tab)
+
+accuracy <- max(acc1, acc2)
+accuracy
 ```
 ## Perform PCA for 500 most variable genes
 ```{r}
@@ -123,7 +141,7 @@ pca_df$Type <- coldata$Type
 ggplot(pca_df, aes(PC1, PC2, color = Type)) +
   geom_point(size = 1.5, alpha = 0.8) +
   theme_minimal(base_size = 16) +
-  labs(title = "PCA of TCGA LUAD vs LUSC (Filtered, Normalized)",
+  labs(title = "PCA of LUAD vs LUSC (Top 500)",
        x = paste0("PC1"),
        y = paste0("PC2"))
 ```
@@ -139,29 +157,30 @@ pca_df$KmeansCluster <- factor(km_res$cluster)
 ggplot(pca_df, aes(PC1, PC2, color = KmeansCluster)) +
   geom_point(size = 1.5, alpha = 0.8) +
   theme_minimal(base_size = 16) +
-  labs(title = "K-means Clustering (k = 2) on PCA",
+  labs(title = "K-means Clustering on PCA (Top 500)",
        color = "Cluster")
 ```
 
+
 # Calculating fold change and p-value of genes using DESeq2 (Notice, following three chunks are commented out for not repeat)
 ```{r}
-dds <- DESeq(dds)
-res <- results(dds)
-res <- res[order(res$padj), ]
-head(as.data.frame(res), 10)
+# dds <- DESeq(dds)
+# res <- results(dds)
+# res <- res[order(res$padj), ]
+# head(as.data.frame(res), 10)
 ```
 
 # Identify differentially expressed genes based on DESeq2 result
 ```{r}
-deg <- as.data.frame(res) %>%
-  dplyr::filter(!is.na(padj), padj < 0.05, abs(log2FoldChange) > 1)
+# deg <- as.data.frame(res) %>%
+#   dplyr::filter(!is.na(padj), padj < 0.05, abs(log2FoldChange) > 1)
 ```
 res has 35997 genes, after filtering, left 6903 genes.
 
 # Save the differentially expressed gene results to processed_data folder
 ```{r}
-write.csv(as.data.frame(res), "processed_data/DESeq2_all_genes_LUAD_vs_LUSC.csv")
-write.csv(deg, "processed_data/DESeq2_DEGs_LUAD_vs_LUSC_filtered.csv")
+# write.csv(as.data.frame(res), "processed_data/DESeq2_all_genes_LUAD_vs_LUSC.csv")
+# write.csv(deg, "processed_data/DESeq2_DEGs_LUAD_vs_LUSC_filtered.csv")
 ```
 
 # Read in all differentially expressed gene results dataframe
@@ -184,6 +203,36 @@ ggplot(all_deg, aes(log2FoldChange, -log10(padj))) +
   theme_minimal() +
   labs(title = "Volcano Plot: LUAD vs LUSC")
 ```
+```{r}
+all_deg$SigGroup <- "Not significant"
+
+all_deg$SigGroup[all_deg$log2FoldChange > 2] <- "LUAD up"
+all_deg$SigGroup[all_deg$log2FoldChange < -2] <- "LUSC up"
+
+ggplot(all_deg, aes(x = log2FoldChange, y = -log10(padj), color = SigGroup)) +
+  geom_point(alpha = 0.6, size = 1.2) +
+  
+  # vertical thresholds
+  geom_vline(xintercept = c(-2, 2), linetype = "dashed", color = "black") +
+  
+  scale_color_manual(
+    values = c(
+      "LUAD up" = "red",
+      "LUSC up" = "blue",
+      "Not significant" = "grey70"
+    ),
+    name = "Direction"
+  ) +
+  
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Volcano Plot: LUAD vs LUSC",
+    x = "log2 Fold Change (LUAD / LUSC)",
+    y = "-log10 Adjusted P-value"
+  )
+```
+
+
 The points at the top of the plots should be those with p-value of 0 (very significant DE genes).
 
 # Heatmap of top 50 DEG
@@ -199,7 +248,7 @@ lusc_samples <- rownames(coldata)[coldata$Type == "LUSC"]
 sel_luad <- sample(luad_samples, 10)
 sel_lusc <- sample(lusc_samples, 10)
 
-sel_samples <- c(sel_luad, sel_lusc)
+sel_samples <- c(luad_samples, lusc_samples)
 
 heatmap_data_sub <- heatmap_data[, sel_samples]
 annotation_sub <- coldata[sel_samples, , drop = FALSE]
@@ -210,7 +259,7 @@ pheatmap(
   show_colnames = FALSE,             
   show_rownames = TRUE,
   fontsize_row = 4,
-  main = "Top 50 DEGs in 10 LUAD vs 10 LUSC samples",
+  main = "Top 50 DEGs in LUAD vs LUSC samples",
 )
 ```
 
@@ -247,7 +296,7 @@ ggplot(pca_deg_df, aes(PC1, PC2, color = KmeansCluster)) +
   geom_point(size = 1.8, alpha = 0.8) +
   theme_minimal(base_size = 14) +
   labs(
-    title = "K-means Clustering (k = 2) on PCA of DE Genes",
+    title = "K-means Clustering on PCA of DE Genes",
     color = "Cluster"
   )
 ```
@@ -272,10 +321,186 @@ accuracy
 ```
 So 94.47% of cells are correctly identified, pretty accurate.
 
-# Work on GSEA from here
+# Over-representation analysis
+- Ranked all DE genes
+- Perform GSEA keeping only high significantly enriched pathways (adjusted p-value > 0.05)
+- Evaluate highest positive and negative normalized enrichment scores (NES)
 
+## Match ensembl ID with entrez ID for all DE genes
+```{r}
+library(biomaRt)
 
+#Get the entrez IDs using biomaRt
+ensembl <- useMart("ensembl",dataset="hsapiens_gene_ensembl",host = "https://www.ensembl.org")
 
+#Remove the version of the ensembl ID
+ens_genes <- sub("\\..*", "", deg_genes)
+
+#Match each ensembl ID with the corresponding entrez ID
+annot <- getBM(attributes=c('ensembl_gene_id', 'entrezgene_id', 'hgnc_symbol'), 
+      filters = 'ensembl_gene_id', 
+      values = ens_genes, 
+      mart = ensembl)
+```
+
+## Create lists of most differntialy expressed genes
+```{r}
+# Define the set of differentially expressed genes for each tumor that are above the threshold
+up_LUSC <- rownames(deg)[which(deg$log2FoldChange > 2 & deg$padj < 0.05)]
+up_LUSC <- sub("\\..*", "", up_LUSC)
+up_LUSC_ID <- annot[match(up_LUSC, annot$ensembl_gene_id), "entrezgene_id"]
+
+up_LUAD <- rownames(deg)[which(deg$log2FoldChange < -2 & deg$padj < 0.05)]
+up_LUAD <- sub("\\..*", "", up_LUAD)
+up_LUAD_ID <- annot[match(up_LUAD, annot$ensembl_gene_id), "entrezgene_id"]
+```
+
+## Get GO terms for LUSC genes
+```{r}
+library(limma)
+
+# Over-representation analyses for GO terms for genes highly expressed in LUSC
+go_LUSC <- goana(up_LUSC_ID, species="Hs")
+topGO(go_LUSC, ontology = "BP", number=10)
+```
+
+## Same thing for LUAD
+```{r}
+# Over-representation analyses for GO terms for genes highly expressed in LUAD
+go_LUAD <- goana(up_LUAD_ID, species="Hs")
+topGO(go_LUAD, ontology = "BP")
+```
+
+## Get KEGG pathways for LUSC
+```{r}
+# Over-representation analyses for KEGG pathways
+kegg_LUSC <- kegga(up_LUSC_ID, species="Hs")
+topKEGG(kegg_LUSC)
+```
+
+## Same thing for LUAD
+```{r}
+# Over-representation analyses for KEGG pathways
+kegg_LUAD <- kegga(up_LUAD_ID, species="Hs")
+topKEGG(kegg_LUAD)
+```
+
+## ORA Results
+- LUSC DE genes are enriched with epithelial/epidermis related GO terms
+- These features are typical of squamous cell biology, supporting the validity of results
+- Keratinization is a common pathological feature of LUSC tumors, further reinforcing the relevance of these pathways (PMCID: PMC10092975).
+- LUAD DE genes are enriched with more metabolic and transportation related processes
+- This high expression of these processes can be understood as metabolic reprogramming that supports rapid tumor growth and proliferation.
+- The cause for differential expression of these traits may also be due to cell-of-origin characteristics or the specific metabolic requirements of the LUAD tumor
+- Further investigation on this is needed
+
+# GSEA
+- Ranked all DE genes
+- Perform GSEA keeping only high significantly enriched pathways (adjusted p-value > 0.05)
+- Evaluate highest positive and negative normalized enrichment scores (NES)
+
+## Preprocess entire list of DE genes for GSEA
+```{r}
+#Preprocess gene_id
+deg$ensembl_gene_id <- sub("\\..*", "", rownames(deg))
+
+deg_annot <- merge(
+  deg,
+  annot,
+  by = "ensembl_gene_id"
+)
+
+# Keep only genes with an entrez ID
+deg_annot <- deg_annot[!is.na(deg_annot$entrezgene_id), ]
+
+# Remove duplicates. Keep max(|log2FoldChange|)
+library(dplyr)
+deg_annot <- deg_annot |>
+  group_by(entrezgene_id) |>
+  slice_max(order_by = abs(log2FoldChange), n = 1) |>
+  ungroup()
+```
+
+```{r}
+# Rank all DE genes by log2FoldChange
+gene_ranks <- deg_annot$log2FoldChange
+names(gene_ranks) <- deg_annot$entrezgene_id
+
+# Create sorted vector of entrez IDs with all genes (LUSC will be at the top)
+gene_ranks <- sort(gene_ranks, decreasing = TRUE)
+```
+
+## Install package for GSEA
+```{r}
+BiocManager::install("clusterProfiler")
+BiocManager::install("enrichplot")
+```
+## Run GSEA
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+
+gsea <- gseGO(
+  geneList = gene_ranks,
+  OrgDb = org.Hs.eg.db,
+  keyType = "ENTREZID",
+  ont = "BP",
+  minGSSize = 10,
+  maxGSSize = 500,
+  pvalueCutoff = 0.05,
+  verbose = FALSE
+)
+
+# Get GSEA results with significant p-value
+sig_results_gsea <- gsea@result[gsea@result$p.adjust < 0.05, ]
+
+# Split results based on LUSC vs. LUAD
+lusc_enriched  <- sig_results_gsea[sig_results_gsea$NES > 0, ]
+luad_enriched <- sig_results_gsea[sig_results_gsea$NES < 0, ]
+```
+
+## Enrichment curves
+```{r}
+# Enrichment curves for top LUSC enriched pathways
+gseaplot2(
+  gsea,
+  geneSetID = lusc_enriched$ID[1],
+  title = lusc_enriched$Description[1]
+)
+gseaplot2(
+  gsea,
+  geneSetID = lusc_enriched$ID[2],
+  title = lusc_enriched$Description[2]
+)
+gseaplot2(
+  gsea,
+  geneSetID = lusc_enriched$ID[3],
+  title = lusc_enriched$Description[3]
+)
+
+# Enrichment curves for top LUAD enriched pathways
+gseaplot2(
+  gsea,
+  geneSetID = luad_enriched$ID[1],
+  title = luad_enriched$Description[1]
+)
+gseaplot2(
+  gsea,
+  geneSetID = luad_enriched$ID[2],
+  title = luad_enriched$Description[2]
+)
+gseaplot2(
+  gsea,
+  geneSetID = luad_enriched$ID[3],
+  title = luad_enriched$Description[3]
+)
+```
+
+## GSEA Results
+- Similar to pathways identified in ORA
+- LUSC DE genes are enriched with epithelial/epidermis related terms
+- LUAD DE genes are enriched with more metabolic and transportation related processes
 
 # PANDA Preprocessing
 ```{r}
@@ -305,7 +530,176 @@ write.table(
 )
 ```
 
+# GSEA on PANDA output 
+```{r}
+# pathways file
+gmt.file <- "c2.cp.kegg.v7.0.symbols.gmt"
+kegg_pathways <- gmtPathways(gmt.file)
+gobp_pathways <- gmtPathways("c5.go.bp.v2025.1.Hs.symbols.gmt")
 
+# load gene rankings 
+degreeDiff_all <- read.delim("LUAD_LUSC_indegreeDifference.rnk",stringsAsFactors = F,header=F)
+degreeDiff_all <- setNames(degreeDiff_all[,2], degreeDiff_all[,1])
+
+# make table for mapping
+degreeDiff_dt <- data.table(
+  gene_ensg = names(degreeDiff_all),
+  score   = unname(degreeDiff_all)
+)
+
+# map ensembl ids to HGNC #
+mart <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl", mirror = "useast")
+map <- getBM(
+  attributes = c("ensembl_gene_id", "hgnc_symbol"),
+  filters    = "ensembl_gene_id",
+  values     = unique(degreeDiff_dt$gene_ensg),
+  mart       = mart
+)
+map <- as.data.table(map)
+setnames(map, c("ensembl_gene_id", "hgnc_symbol"), c("gene_ensg", "SYMBOL"))
+
+# check for duplicates and NAs 
+sum(is.na(map$SYMBOL) | map$SYMBOL == "")
+sum(duplicated(map$gene_ensg))
+map <- map[!is.na(SYMBOL) & SYMBOL != ""]
+
+# merge mapping into vector
+degreeDiff_dt <- merge(degreeDiff_dt, map, by = "gene_ensg", all.x = TRUE)
+degreeDiff_dt <- degreeDiff_dt[!is.na(SYMBOL) & SYMBOL != ""]
+degreeDiff_mapped <- degreeDiff_dt$score
+names(degreeDiff_mapped) <- degreeDiff_dt$SYMBOL
+
+# for duplicates, take max
+collapse_maxabs <- function(x) x[which.max(abs(x))]
+degreeDiff_mapped <- tapply(
+  degreeDiff_mapped,
+  names(degreeDiff_mapped),
+  collapse_maxabs
+)
+degreeDiff_mapped <- sort(degreeDiff_mapped, decreasing = TRUE)
+
+# kegg
+fgseaRes_kegg <- fgsea(kegg_pathways, degreeDiff_mapped, minSize=15, maxSize=500)
+
+# Subset to pathways with FDR < 0.05
+sig_kegg <- fgseaRes_kegg[fgseaRes_kegg$padj < 0.05,]
+
+# pathways more expressed in LUSC 
+sig_kegg[order(sig_kegg$NES)[1:10],]
+
+# LUAD-enriched pathways
+sig_kegg[order(-sig_kegg$NES)[1:10],]
+```
+```{r}
+# go BP GSEA
+fgseaRes_gobp <- fgsea(gobp_pathways, degreeDiff_mapped, minSize=15, maxSize=500)
+
+# Subset to pathways with FDR < 0.05
+sig_gobp <- fgseaRes_gobp[fgseaRes_gobp$padj < 0.05,]
+
+# pathways more expressed in LUSC 
+sig_gobp[order(sig_gobp$NES)[1:10],]
+
+# LUAD-enriched pathways
+sig_gobp[order(-sig_gobp$NES)[1:10],]
+```
+
+```{r}
+# KEGG visualization
+# from netzoo documentation 
+dat <- data.frame(fgseaRes_kegg)
+
+# Settings
+fdrcut <- 0.05 # FDR cut-off to use as output for significant signatures
+dencol_neg <- "blue" # bubble plot color for negative ES
+dencol_pos <- "red" # bubble plot color for positive ES
+signnamelength <- 4 # set to remove prefix from signature names (2 for "GO", 4 for "KEGG", 8 for "REACTOME")
+asp <- 3 # aspect ratio of bubble plot
+charcut <- 100 # cut signature name in heatmap to this nr of characters
+
+# Make signature names more readable
+a <- as.character(dat$pathway) # 'a' is a great variable name to substitute row names with something more readable
+for (j in 1:length(a)){
+  a[j] <- substr(a[j], signnamelength+2, nchar(a[j]))
+}
+a <- tolower(a) # convert to lower case (you may want to comment this out, it really depends on what signatures you are looking at, c6 signatures contain gene names, and converting those to lower case may be confusing)
+for (j in 1:length(a)){
+  if(nchar(a[j])>charcut) { a[j] <- paste(substr(a[j], 1, charcut), "...", sep=" ")}
+} # cut signature names that have more characters than charcut, and add "..."
+a <- gsub("_", " ", a)
+dat$NAME <- a
+
+# Determine what signatures to plot (based on FDR cut)
+dat2 <- dat[dat[,"padj"]<fdrcut,]
+dat2 <- dat2[order(dat2[,"padj"]),] 
+dat2$signature <- factor(dat2$NAME, rev(as.character(dat2$NAME)))
+# Determine what labels to color
+sign_neg <- which(dat2[,"NES"]<0)
+sign_pos <- which(dat2[,"NES"]>0)
+# Color labels
+signcol <- rep(NA, length(dat2$signature))
+signcol[sign_neg] <- dencol_neg # text color of negative signatures
+signcol[sign_pos] <- dencol_pos # text color of positive signatures
+signcol <- rev(signcol) # need to revert vector of colors, because ggplot starts plotting these from below
+
+# Plot bubble plot
+g<-ggplot(dat2, aes(x=padj,y=signature,size=size))
+g+geom_point(aes(fill=NES), shape=21, colour="white")+
+  theme_bw()+ # white background, needs to be placed before the "signcol" line
+  xlim(0,fdrcut)+
+  scale_size_area(max_size=10,guide="none")+
+  scale_fill_gradient2(low=dencol_neg, high=dencol_pos)+
+  theme(axis.text.y = element_text(colour=signcol))+
+  theme(aspect.ratio=asp, axis.title.y=element_blank()) # test aspect.ratio
+```
+```{r, fig.width=10, dpi=600}
+# GOBP visualization
+# from netzoo documentation 
+dat <- data.frame(fgseaRes_gobp)
+
+# Settings
+fdrcut <- 0.0000025 # FDR cut-off to use as output for significant signatures
+dencol_neg <- "blue" # bubble plot color for negative ES
+dencol_pos <- "red" # bubble plot color for positive ES
+signnamelength <- 4 # set to remove prefix from signature names (2 for "GO", 4 for "KEGG", 8 for "REACTOME")
+#asp <- 10 # aspect ratio of bubble plot
+charcut <- 100 # cut signature name in heatmap to this nr of characters
+
+# Make signature names more readable
+a <- as.character(dat$pathway) # 'a' is a great variable name to substitute row names with something more readable
+for (j in 1:length(a)){
+  a[j] <- substr(a[j], signnamelength+2, nchar(a[j]))
+}
+a <- tolower(a) # convert to lower case (you may want to comment this out, it really depends on what signatures you are looking at, c6 signatures contain gene names, and converting those to lower case may be confusing)
+for (j in 1:length(a)){
+  if(nchar(a[j])>charcut) { a[j] <- paste(substr(a[j], 1, charcut), "...", sep=" ")}
+} # cut signature names that have more characters than charcut, and add "..."
+a <- gsub("_", " ", a)
+dat$NAME <- a
+
+# Determine what signatures to plot (based on FDR cut)
+dat2 <- dat[dat[,"padj"]<fdrcut,]
+dat2 <- dat2[order(dat2[,"padj"]),] 
+dat2$signature <- factor(dat2$NAME, rev(as.character(dat2$NAME)))
+# Determine what labels to color
+sign_neg <- which(dat2[,"NES"]<0)
+sign_pos <- which(dat2[,"NES"]>0)
+# Color labels
+signcol <- rep(NA, length(dat2$signature))
+signcol[sign_neg] <- dencol_neg # text color of negative signatures
+signcol[sign_pos] <- dencol_pos # text color of positive signatures
+signcol <- rev(signcol) # need to revert vector of colors, because ggplot starts plotting these from below
+
+# Plot bubble plot
+g<-ggplot(dat2, aes(x=padj,y=signature,size=size))
+g+geom_point(aes(fill=NES), shape=21, colour="white")+
+  theme_bw()+ # white background, needs to be placed before the "signcol" line
+  xlim(0,fdrcut)+
+  scale_size_area(max_size=10,guide="none")+
+  scale_fill_gradient2(low=dencol_neg, high=dencol_pos)+
+  theme(axis.text.y = element_text(colour=signcol))+
+  theme(axis.title.y=element_blank()) # test aspect.ratio
+```
 
 
 
